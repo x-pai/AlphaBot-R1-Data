@@ -1,0 +1,7 @@
+venv/
+.env
+*.log
+*.jsonl
+*.csv
+*.parquet
+*.json 
