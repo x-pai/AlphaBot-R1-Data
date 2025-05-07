@@ -29,7 +29,7 @@ A股数据采集、处理和分析工具，支持基本面、技术面和消息�
 
 1. 克隆仓库：
 ```bash
-git clone https://github.com/yourusername/AlphaBot-R1-Data.git
+git clone https://github.com/x-pai/AlphaBot-R1-Data.git
 cd AlphaBot-R1-Data
 ```
 

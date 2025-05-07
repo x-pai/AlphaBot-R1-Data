@@ -128,6 +128,7 @@ class BaseConfig:
     # 处理配置
     batch_size: int = 100
     max_workers: int = 4
+    chunk_size: int = 100  # 数据分块大小
     cache_enabled: bool = True
     cache_ttl: int = 3600  # 缓存时间（秒）
     
@@ -169,6 +170,11 @@ class BaseConfig:
                     retry_delay=int(os.getenv("OPENAI_RETRY_DELAY", "5"))
                 )
         
+        # 从环境变量加载处理配置
+        self.max_workers = int(os.getenv('MAX_WORKERS', str(self.max_workers)))
+        self.chunk_size = int(os.getenv('CHUNK_SIZE', str(self.chunk_size)))
+        self.batch_size = int(os.getenv('BATCH_SIZE', str(self.batch_size)))
+        
         # 从环境变量加载分析配置
         self.analysis = AnalysisConfig(
             fundamental_enabled=os.getenv('ANALYSIS_FUNDAMENTAL_ENABLED', 'true').lower() == 'true',
@@ -207,6 +213,7 @@ class BaseConfig:
             },
             "batch_size": self.batch_size,
             "max_workers": self.max_workers,
+            "chunk_size": self.chunk_size,
             "cache_enabled": self.cache_enabled,
             "cache_ttl": self.cache_ttl,
             "analysis": {

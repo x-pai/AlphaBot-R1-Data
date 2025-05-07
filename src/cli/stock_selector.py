@@ -140,7 +140,7 @@ class StockSelector:
         try:
             # 获取股票列表
             self.logger.info("开始获取股票列表...")
-            stock_list = self.data_fetcher.get_stock_list()
+            stock_list = self.data_fetcher.get_stock_list(list_type="strong")
             self.logger.info(f"获取到 {len(stock_list)} 只股票")
             
             # 计算开始日期（获取30天数据用于计算技术指标）
@@ -153,16 +153,16 @@ class StockSelector:
                 future_to_stock = {
                     executor.submit(
                         self._process_single_stock,
-                        stock,
-                        start_date,
-                        date,
-                        min_price,
-                        max_price,
-                        min_volume,
-                        min_market_cap,
-                        max_pe,
-                        min_roe,
-                        min_profit_growth
+                        stock=stock,
+                        start_date=start_date,
+                        end_date=date,
+                        min_price=min_price,
+                        max_price=max_price,
+                        min_volume=min_volume,
+                        min_market_cap=min_market_cap,
+                        max_pe=max_pe,
+                        min_roe=min_roe,
+                        min_profit_growth=min_profit_growth
                     ): stock for stock in stock_list
                 }
                 
@@ -198,16 +198,19 @@ class StockSelector:
                             
                         pbar.update(1)
             
-            # 按综合得分排序
-            selected_stocks.sort(key=lambda x: x['technical_score'] + x['fundamental_score'], reverse=True)
-            
-            # 输出筛选统计信息
-            self.logger.info("\n筛选统计信息：")
+            # 输出统计信息
+            self.logger.info("选股结果统计：")
             self.logger.info(f"总股票数: {len(stock_list)}")
             self.logger.info(f"选中股票数: {len(selected_stocks)}")
-            self.logger.info("\n筛选原因统计：")
-            for reason, count in skipped_stocks.items():
-                self.logger.info(f"{reason}: {count}")
+            self.logger.info("筛选原因统计：")
+            for status, count in skipped_stocks.items():
+                self.logger.info(f"{status}: {count}")
+            
+            # 按技术面得分和基本面得分的加权和排序
+            selected_stocks.sort(
+                key=lambda x: x['technical_score'] * 0.6 + x['fundamental_score'] * 0.4,
+                reverse=True
+            )
             
             return selected_stocks
             
