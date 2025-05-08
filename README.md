@@ -198,18 +198,11 @@ python -m src.cli.stock_selector \
 # SFT生成参数
 --generate-sft: 是否生成SFT数据
 --sft-samples: 每只股票生成的SFT样本数量
---sft-lookback: SFT样本的回溯天数
-
-# 选股参数
---min-price: 最低价格
---max-price: 最高价格
---min-volume: 最低成交量（手）
---min-market-cap: 最低市值（元）
---max-pe: 最高市盈率
---min-roe: 最低净资产收益率（%）
---min-profit-growth: 最低利润增长率（%）
---output-file: 输出文件路径
 ```
+
+## 更新日志
+
+查看 [CHANGELOG.md](CHANGELOG.md) 了解详细的更新历史。
 
 ## 目录结构
 
@@ -233,14 +226,6 @@ python -m src.cli.stock_selector \
 ├── requirements.txt     # 依赖包列表
 └── README.md           # 项目说明
 ```
-
-## 更新日志
-
-### 2024-03-20
-- 更新布林带周期从20日改为25日
-- 优化布林带计算逻辑
-- 添加历史数据分析配置
-- 完善技术指标参数配置
 
 ## 贡献指南
 
