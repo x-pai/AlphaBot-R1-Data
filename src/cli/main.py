@@ -90,14 +90,14 @@ def main():
     args = parse_args()
     
     # 创建配置
-    config = BaseConfig(
-        data_source=DataSourceConfig(name=args.data_source),
-        market=MarketConfig(market="CN", exchange="SSE"),
-        data_config=DataConfig(
-            processed_dir=Path(args.output_dir)
-        ),
-        log_dir=Path(args.log_dir)
-    )
+    config = BaseConfig()
+    
+    # 更新配置
+    config.data_source = DataSourceConfig(name=args.data_source)
+    config.market = MarketConfig(market="CN", exchange="SSE")
+    config.data_config = DataConfig(base_dir=Path("."))
+    config.data_config.processed_dir = Path(args.output_dir)
+    config.log_dir = Path(args.log_dir)
     
     # 设置日志
     logger = setup_logging(config.log_dir)
@@ -116,8 +116,7 @@ def main():
         logger.info(f"Processing {len(stocks)} stocks")
         
         # 创建技术指标计算器
-        indicator_config = IndicatorConfig()
-        indicators = TechnicalIndicators(indicator_config)
+        indicators = TechnicalIndicators(config.analysis.technical_config)
         
         # 创建SFT生成器
         sft_generator = SFTGenerator(config)

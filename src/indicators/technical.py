@@ -2,34 +2,13 @@ from typing import List, Dict, Optional
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass
-from src.core.config import AnalysisConfig
-
-@dataclass
-class IndicatorConfig:
-    """技术指标配置"""
-    ma_periods: List[int] = None
-    ema_periods: List[int] = None
-    rsi_period: int = 14
-    macd_fast: int = 12
-    macd_slow: int = 26
-    macd_signal: int = 9
-    kdj_k: int = 9
-    kdj_d: int = 3
-    kdj_j: int = 3
-    boll_period: int = 25
-    boll_std: float = 2.0
-    
-    def __post_init__(self):
-        if self.ma_periods is None:
-            self.ma_periods = [5, 10, 20, 60]
-        if self.ema_periods is None:
-            self.ema_periods = [5, 10, 20, 60]
+from src.core.config import TechnicalConfig
 
 class TechnicalIndicators:
     """技术指标计算类"""
     
-    def __init__(self, config: Optional[AnalysisConfig] = None):
-        self.config = config or AnalysisConfig()
+    def __init__(self, config: Optional[TechnicalConfig] = None):
+        self.config = config or TechnicalConfig()
     
     def calculate_all(self, df: pd.DataFrame) -> pd.DataFrame:
         """计算所有技术指标
@@ -157,8 +136,8 @@ class TechnicalIndicators:
             pd.DataFrame: 添加了布林带的数据
         """
         # 使用配置中的参数
-        period = self.config.analysis.boll_period
-        std = self.config.analysis.boll_std
+        period = self.config.boll_period
+        std = self.config.boll_std
         
         # 计算中轨（25日移动平均线）
         df['boll_middle'] = df['close'].rolling(window=period).mean()

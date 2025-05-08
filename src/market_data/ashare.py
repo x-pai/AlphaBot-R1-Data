@@ -6,6 +6,7 @@ from pathlib import Path
 import logging
 from ..core.config import BaseConfig
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from .db_manager import DBManager
 
 class AShareDataFetcher:
     """A股数据获取器"""
@@ -15,31 +16,47 @@ class AShareDataFetcher:
         self.logger = logging.getLogger(__name__)
         self.max_workers = config.max_workers
         self.chunk_size = config.chunk_size
+        self.db_manager = DBManager()
     
-    def get_stock_list(self, list_type: str = "all") -> List[str]:
+    def get_stock_list(self, list_type: str = "all", params: dict = None) -> List[str]:
         """获取股票列表
         
         Args:
             list_type: 列表类型，可选值：all, strong, weak, custom
+            params: 参数字典，用于缓存判断
             
         Returns:
             List[str]: 股票代码列表
         """
         try:
+            # 尝试从缓存获取
+            cached_stocks = self.db_manager.get_stock_list(list_type, params)
+            if cached_stocks is not None:
+                self.logger.info(f"从缓存获取股票列表: {list_type}")
+                return cached_stocks
+            
+            # 缓存未命中，从API获取
+            self.logger.info(f"从API获取股票列表: {list_type}")
             if list_type == "all":
-                return ak.stock_zh_a_spot_em()['代码'].tolist()
+                stocks = ak.stock_zh_a_spot_em()['代码'].tolist()
             elif list_type == "strong":
                 # 获取强势股
                 df = ak.stock_zh_a_spot_em()
-                return df[df['涨跌幅'] > 0]['代码'].tolist()
+                stocks = df[df['涨跌幅'] > 0]['代码'].tolist()
             elif list_type == "weak":
                 # 获取弱势股
                 df = ak.stock_zh_a_spot_em()
-                return df[df['涨跌幅'] < 0]['代码'].tolist()
+                stocks = df[df['涨跌幅'] < 0]['代码'].tolist()
             else:
                 raise ValueError(f"Unsupported list type: {list_type}")
+            
+            # 保存到缓存
+            self.db_manager.save_stock_list(list_type, stocks, params)
+            
+            return stocks
+            
         except Exception as e:
-            self.logger.error(f"Error getting stock list: {str(e)}")
+            self.logger.error(f"获取股票列表失败: {str(e)}")
             return []
     
     def _fetch_single_stock_data(self, 
@@ -161,25 +178,58 @@ class AShareDataFetcher:
             Optional[Dict[str, Any]]: 基本面数据
         """
         try:
-            # 获取财务指标
-            df = ak.stock_financial_analysis_indicator(symbol=stock)
-            if df is not None and not df.empty:
-                latest = df.iloc[0]
-                return {
-                    'name': ak.stock_individual_info_em(symbol=stock)['股票简称'].iloc[0],
-                    'pe': latest['市盈率'],
-                    'pb': latest['市净率'],
-                    'roe': latest['净资产收益率(%)'],
-                    'roa': latest['总资产报酬率(%)'],
-                    'gross_margin': latest['销售毛利率(%)'],
-                    'net_margin': latest['销售净利率(%)'],
-                    'debt_ratio': latest['资产负债比率(%)'],
-                    'current_ratio': latest['流动比率'],
-                    'quick_ratio': latest['速动比率'],
-                    'market_cap': latest['总市值'],
-                    'profit_growth': latest['净利润增长率(%)']
-                }
-            return None
+            # 获取单个股票的基本信息
+            df = ak.stock_individual_info_em(symbol=stock)
+            if df is None or df.empty:
+                return None
+            
+            # 将DataFrame转换为字典，使用item作为key
+            info_dict = dict(zip(df['item'], df['value']))
+            
+            # 获取公司名称
+            name = info_dict.get('股票简称', '')
+            
+            # 获取市值（亿元）
+            market_cap = float(info_dict.get('总市值', 0)) / 100000000
+            
+            # 获取利润增长率（使用最近一期财报数据）
+            try:
+                profit_df = ak.stock_financial_report_em(symbol=stock, report_type="利润表")
+                if not profit_df.empty:
+                    # 获取最近两期净利润
+                    latest_profit = float(profit_df.iloc[0]['净利润'])
+                    prev_profit = float(profit_df.iloc[1]['净利润'])
+                    # 计算增长率
+                    profit_growth = ((latest_profit - prev_profit) / abs(prev_profit)) * 100 if prev_profit != 0 else 0
+                else:
+                    profit_growth = 0
+            except:
+                profit_growth = 0
+            
+            # 获取市盈率和市净率
+            try:
+                pe_df = ak.stock_a_lg_indicator(symbol=stock)
+                if not pe_df.empty:
+                    pe = float(pe_df.iloc[-1]['pe'])
+                    pb = float(pe_df.iloc[-1]['pb'])
+                else:
+                    pe = 0
+                    pb = 0
+            except:
+                pe = 0
+                pb = 0
+            
+            # 计算ROE
+            roe = (pb / pe) * 100 if pe > 0 else 0
+            
+            return {
+                'name': name,
+                'market_cap': market_cap,
+                'pe': pe,
+                'pb': pb,
+                'roe': roe,
+                'profit_growth': profit_growth
+            }
             
         except Exception as e:
             self.logger.error(f"获取股票 {stock} 的基本面数据时出错: {str(e)}")

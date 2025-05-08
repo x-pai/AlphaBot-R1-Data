@@ -114,7 +114,7 @@ analysis:
     - turnover
     - ma5
     - ma10
-    - ma25
+    - ma20
     - ma60
     - vol_ma5
     - vol_ma10

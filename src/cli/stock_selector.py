@@ -17,7 +17,7 @@ class StockSelector:
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.data_fetcher = AShareDataFetcher(config)
-        self.technical = TechnicalIndicators(config)
+        self.technical = TechnicalIndicators(config.analysis.technical_config)
         self.max_workers = config.max_workers  # 最大线程数
         
     def _process_single_stock(self, 
@@ -49,19 +49,24 @@ class StockSelector:
             Dict[str, Any]: 处理结果
         """
         try:
+            # 仅保留代码
+            stock = stock.split(".")[0]
+
             # 获取日线数据
             daily_data = self.data_fetcher.fetch_daily_data(
                 stock=stock,
                 start_date=start_date,
                 end_date=end_date
             )
-            if daily_data is None or len(daily_data) < 30:
+
+            # 检查数据是否足够 
+            if daily_data is None or len(daily_data) < 200: # 200天数据用于计算技术指标
                 return {'stock': stock, 'status': 'no_data'}
                 
             # 获取基本面数据
-            fundamental_data = self.data_fetcher.fetch_fundamental_data(stock)
-            if fundamental_data is None:
-                return {'stock': stock, 'status': 'no_fundamental'}
+            # fundamental_data = self.data_fetcher.fetch_fundamental_data(stock)
+            # if fundamental_data is None:
+            #     return {'stock': stock, 'status': 'no_fundamental'}
                 
             # 计算技术指标
             daily_data = self.technical.calculate_all(daily_data)
@@ -70,18 +75,18 @@ class StockSelector:
             latest = daily_data.iloc[-1]
             
             # 基本面筛选
-            if latest['close'] < min_price or latest['close'] > max_price:
-                return {'stock': stock, 'status': 'price_filter'}
-            if latest['volume'] < min_volume:
-                return {'stock': stock, 'status': 'volume_filter'}
-            if fundamental_data['market_cap'] < min_market_cap:
-                return {'stock': stock, 'status': 'market_cap_filter'}
-            if fundamental_data['pe'] > max_pe:
-                return {'stock': stock, 'status': 'pe_filter'}
-            if fundamental_data['roe'] < min_roe:
-                return {'stock': stock, 'status': 'roe_filter'}
-            if fundamental_data['profit_growth'] < min_profit_growth:
-                return {'stock': stock, 'status': 'profit_growth_filter'}
+            # if latest['close'] < min_price or latest['close'] > max_price:
+            #     return {'stock': stock, 'status': 'price_filter'}
+            # if latest['volume'] < min_volume:
+            #     return {'stock': stock, 'status': 'volume_filter'}
+            # if fundamental_data['market_cap'] < min_market_cap:
+            #     return {'stock': stock, 'status': 'market_cap_filter'}
+            # if fundamental_data['pe'] > max_pe:
+            #     return {'stock': stock, 'status': 'pe_filter'}
+            # if fundamental_data['roe'] < min_roe:
+            #     return {'stock': stock, 'status': 'roe_filter'}
+            # if fundamental_data['profit_growth'] < min_profit_growth:
+            #     return {'stock': stock, 'status': 'profit_growth_filter'}
             
             # 技术面筛选
             if not self._check_technical_indicators(daily_data):
@@ -89,23 +94,23 @@ class StockSelector:
             
             # 计算得分
             technical_score = self._calculate_technical_score(daily_data)
-            fundamental_score = self._calculate_fundamental_score(fundamental_data)
+            # fundamental_score = self._calculate_fundamental_score(fundamental_data)
             
             return {
                 'stock': stock,
                 'status': 'selected',
                 'data': {
-                    'name': fundamental_data['name'],
+                    # 'name': fundamental_data['name'],
                     'price': latest['close'],
                     'change': latest['close'] / daily_data.iloc[-2]['close'] - 1,
                     'volume': latest['volume'],
                     'amount': latest['amount'],
-                    'market_cap': fundamental_data['market_cap'],
-                    'pe': fundamental_data['pe'],
-                    'roe': fundamental_data['roe'],
-                    'profit_growth': fundamental_data['profit_growth'],
+                    # 'market_cap': fundamental_data['market_cap'],
+                    # 'pe': fundamental_data['pe'],
+                    # 'roe': fundamental_data['roe'],
+                    # 'profit_growth': fundamental_data['profit_growth'],
                     'technical_score': technical_score,
-                    'fundamental_score': fundamental_score
+                    # 'fundamental_score': fundamental_score
                 }
             }
             
@@ -142,9 +147,10 @@ class StockSelector:
             self.logger.info("开始获取股票列表...")
             stock_list = self.data_fetcher.get_stock_list(list_type="strong")
             self.logger.info(f"获取到 {len(stock_list)} 只股票")
+            stock_list = stock_list[:100]
             
             # 计算开始日期（获取30天数据用于计算技术指标）
-            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=30)).strftime('%Y%m%d')
+            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=365)).strftime('%Y%m%d')
             self.logger.info(f"获取 {start_date} 至 {date} 的数据用于计算技术指标")
             
             # 创建线程池
@@ -228,46 +234,60 @@ class StockSelector:
             bool: 是否通过技术指标筛选
         """
         latest = df.iloc[-1]
+        stock = latest['stock']
         
-        # 检查250日均线
-        if 'ma250' not in latest:
+        # 检查200日均线
+        if 'ma200' not in latest:
+            self.logger.info(f"股票 {stock} 未通过技术指标筛选: 缺少200日均线数据")
             return False
             
-        # 检查是否突破250日均线
-        if not (latest['close'] > latest['ma250'] and 
-                df.iloc[-2]['close'] <= df.iloc[-2]['ma250']):
+        # 检查是否突破200日均线
+        # 1. 当前价格在均线上方
+        # 2. 最近3天至少有2天收盘价在均线上方
+        # 3. 突破幅度至少1%
+        price_above_ma = latest['close'] > latest['ma200']
+        recent_days_above = sum(1 for i in range(-3, 0) if df.iloc[i]['close'] > df.iloc[i]['ma200'])
+        break_through_pct = (latest['close'] - latest['ma200']) / latest['ma200'] * 100
+        
+        if not (price_above_ma and recent_days_above >= 2 and break_through_pct >= 1):
+            self.logger.info(f"股票 {stock} 未通过技术指标筛选: 未有效突破200日均线 "
+                           f"(当前价格:{latest['close']:.2f}, 均线:{latest['ma200']:.2f}, "
+                           f"突破幅度:{break_through_pct:.2f}%, 最近3天均线上方天数:{recent_days_above})")
             return False
             
         # 检查布林带
-        if not (latest['boll_lower'] < latest['close'] < latest['boll_upper']):
-            return False
-            
-        # 检查布林带宽度
-        boll_width = (latest['boll_upper'] - latest['boll_lower']) / latest['boll_middle']
-        if boll_width > 0.15:  # 布林带过宽，波动过大
-            return False
-            
-        # 检查布林带上升空间
-        upper_space = (latest['boll_upper'] - latest['close']) / latest['close'] * 100
-        if upper_space < 5:  # 上升空间不足
+        # 1. 价格在布林带范围内
+        # 2. 价格回踩上轨
+        price_in_band = latest['boll_lower'] < latest['close'] < latest['boll_upper']
+        price_to_upper = (latest['boll_upper'] - latest['close']) / latest['close'] * 100
+        
+        if not (price_in_band and 0 < price_to_upper < 2):  # 价格回踩上轨，距离上轨不超过2%
+            self.logger.info(f"股票 {stock} 未通过技术指标筛选: 布林带条件不满足 "
+                           f"(价格:{latest['close']:.2f}, 上轨:{latest['boll_upper']:.2f}, "
+                           f"距离上轨:{price_to_upper:.2f}%)")
             return False
             
         # 检查均线系统
-        if not (latest['ma5'] > latest['ma10'] > latest['ma25']):
+        if not (latest['ma5'] > latest['ma10'] > latest['ma20']):
+            self.logger.info(f"股票 {stock} 未通过技术指标筛选: 均线系统未形成多头排列")
             return False
             
         # 检查MACD
         if not (latest['macd'] > 0 and latest['macd'] > latest['macd_signal']):
+            self.logger.info(f"股票 {stock} 未通过技术指标筛选: MACD未形成金叉或位于零轴下方")
             return False
             
         # 检查RSI
         if not (30 < latest['rsi'] < 70):
+            self.logger.info(f"股票 {stock} 未通过技术指标筛选: RSI不在合理区间 ({latest['rsi']:.2f})")
             return False
             
         # 检查KDJ
         if not (latest['kdj_k'] > latest['kdj_d']):
+            self.logger.info(f"股票 {stock} 未通过技术指标筛选: KDJ未形成金叉")
             return False
             
+        self.logger.info(f"股票 {stock} 通过所有技术指标筛选")
         return True
     
     def _calculate_technical_score(self, df: pd.DataFrame) -> float:
@@ -282,14 +302,14 @@ class StockSelector:
         latest = df.iloc[-1]
         score = 0.0
         
-        # 250日均线突破得分
-        if latest['close'] > latest['ma250'] and df.iloc[-2]['close'] <= df.iloc[-2]['ma250']:
-            ma250_change = (latest['close'] - latest['ma250']) / latest['ma250'] * 100
-            if ma250_change > 5:
+        # 200日均线突破得分
+        if latest['close'] > latest['ma200'] and df.iloc[-2]['close'] <= df.iloc[-2]['ma200']:
+            ma200_change = (latest['close'] - latest['ma200']) / latest['ma200'] * 100
+            if ma200_change > 5:
                 score += 40
-            elif ma250_change > 3:
+            elif ma200_change > 3:
                 score += 30
-            elif ma250_change > 0:
+            elif ma200_change > 0:
                 score += 20
         
         # 布林带得分
@@ -313,7 +333,7 @@ class StockSelector:
                 score += 10
             
         # 均线系统得分
-        if latest['ma5'] > latest['ma10'] > latest['ma25']:
+        if latest['ma5'] > latest['ma10'] > latest['ma20']:
             score += 20
         elif latest['ma5'] > latest['ma10']:
             score += 10

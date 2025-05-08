@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 from datetime import datetime
+import os
 
 @dataclass
 class DataSourceConfig:
@@ -28,20 +29,31 @@ class MarketConfig:
 @dataclass
 class DataConfig:
     """数据配置"""
-    # 原始数据目录
-    raw_dir: Path = field(default_factory=lambda: Path("data/raw"))
-    # 处理后的数据目录
-    processed_dir: Path = field(default_factory=lambda: Path("data/processed"))
-    # 日线数据目录
-    daily_dir: Path = field(default_factory=lambda: Path("data/processed/daily"))
-    # SFT数据目录
-    sft_dir: Path = field(default_factory=lambda: Path("data/processed/sft"))
-    # 训练集目录
-    train_dir: Path = field(default_factory=lambda: Path("data/processed/sft/train"))
-    # 验证集目录
-    val_dir: Path = field(default_factory=lambda: Path("data/processed/sft/val"))
-    # 测试集目录
-    test_dir: Path = field(default_factory=lambda: Path("data/processed/sft/test"))
+    base_dir: Path = Path(".")
+    raw_dir: Path = field(init=False)
+    processed_dir: Path = field(init=False)
+    daily_dir: Path = field(init=False)
+    sft_dir: Path = field(init=False)
+    train_dir: Path = field(init=False)
+    val_dir: Path = field(init=False)
+    test_dir: Path = field(init=False)
+    
+    def __post_init__(self):
+        """初始化后处理"""
+        # 原始数据目录
+        self.raw_dir = self.base_dir / "data/raw"
+        # 处理后的数据目录
+        self.processed_dir = self.base_dir / "data/processed"
+        # 日线数据目录
+        self.daily_dir = self.base_dir / "data/processed/daily"
+        # SFT数据目录
+        self.sft_dir = self.base_dir / "data/processed/sft"
+        # 训练集目录
+        self.train_dir = self.base_dir / "data/processed/sft/train"
+        # 验证集目录
+        self.val_dir = self.base_dir / "data/processed/sft/val"
+        # 测试集目录
+        self.test_dir = self.base_dir / "data/processed/sft/test"
 
 @dataclass
 class OpenAIConfig:
@@ -56,6 +68,30 @@ class OpenAIConfig:
     retry_delay: int = 5
 
 @dataclass
+class TechnicalConfig:
+    """技术指标配置"""
+    # 移动平均线周期
+    ma_periods: List[int] = field(default_factory=lambda: [5, 10, 20, 200])
+    ema_periods: List[int] = field(default_factory=lambda: [5, 10, 20, 200])
+    
+    # MACD参数
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    
+    # RSI参数
+    rsi_period: int = 14
+    
+    # KDJ参数
+    kdj_k: int = 9
+    kdj_d: int = 3
+    kdj_j: int = 3
+    
+    # 布林带参数
+    boll_period: int = 25
+    boll_std: float = 2.0
+
+@dataclass
 class AnalysisConfig:
     """分析配置"""
     # 基本面分析
@@ -67,6 +103,7 @@ class AnalysisConfig:
     
     # 技术面分析
     technical_enabled: bool = True
+    technical_config: TechnicalConfig = field(default_factory=TechnicalConfig)
     technical_indicators: List[str] = field(default_factory=lambda: [
         'ma', 'ema', 'macd', 'rsi', 'kdj', 'boll',
         'volume_ma', 'obv', 'cci', 'dmi'
@@ -84,20 +121,9 @@ class AnalysisConfig:
     history_days: int = 30
     history_metrics: List[str] = field(default_factory=lambda: [
         'price', 'volume', 'amount', 'turnover',
-        'ma5', 'ma10', 'ma25', 'ma60',
+        'ma5', 'ma10', 'ma20', 'ma200',
         'vol_ma5', 'vol_ma10'
     ])
-    
-    # 技术指标参数
-    boll_period: int = 25  # 布林带周期
-    boll_std: float = 2.0  # 布林带标准差倍数
-    macd_fast: int = 12   # MACD快线周期
-    macd_slow: int = 26   # MACD慢线周期
-    macd_signal: int = 9  # MACD信号线周期
-    rsi_period: int = 14  # RSI周期
-    kdj_k: int = 9       # KDJ K值周期
-    kdj_d: int = 3       # KDJ D值周期
-    kdj_j: int = 3       # KDJ J值周期
 
 @dataclass
 class BaseConfig:
@@ -109,7 +135,7 @@ class BaseConfig:
     
     # 路径配置
     base_dir: Path = Path(".")
-    data_config: DataConfig = field(default_factory=DataConfig)
+    data_config: DataConfig = field(default_factory=lambda: DataConfig(base_dir=Path(".")))
     log_dir: Path = field(default_factory=lambda: Path("logs"))
     output_dir: Path = field(default_factory=lambda: Path("output"))
     
@@ -126,8 +152,8 @@ class BaseConfig:
     ))
     
     # 处理配置
-    batch_size: int = 100
-    max_workers: int = 4
+    batch_size: int = 50  # 批处理大小
+    max_workers: int = 4  # 最大线程数
     chunk_size: int = 100  # 数据分块大小
     cache_enabled: bool = True
     cache_ttl: int = 3600  # 缓存时间（秒）
@@ -137,6 +163,25 @@ class BaseConfig:
     
     def __post_init__(self):
         """初始化后处理"""
+        # 更新data_config的base_dir
+        self.data_config.base_dir = self.base_dir
+        
+        # 从环境变量加载处理配置
+        self.max_workers = int(os.getenv('MAX_WORKERS', self.max_workers))
+        self.chunk_size = int(os.getenv('CHUNK_SIZE', self.chunk_size))
+        self.batch_size = int(os.getenv('BATCH_SIZE', self.batch_size))
+        
+        # 从环境变量加载分析配置
+        self.analysis.fundamental_enabled = os.getenv('ANALYSIS_FUNDAMENTAL_ENABLED', 'true').lower() == 'true'
+        self.analysis.technical_enabled = os.getenv('ANALYSIS_TECHNICAL_ENABLED', 'true').lower() == 'true'
+        self.analysis.news_enabled = os.getenv('ANALYSIS_NEWS_ENABLED', 'true').lower() == 'true'
+        self.analysis.news_lookback_days = int(os.getenv('ANALYSIS_NEWS_LOOKBACK_DAYS', '5'))
+        
+        # 加载技术指标配置
+        ma_periods_str = os.getenv('MA_PERIODS', '5,10,20,200')
+        self.analysis.technical_config.ma_periods = [int(x) for x in ma_periods_str.split(',')]
+        self.analysis.technical_config.ema_periods = self.analysis.technical_config.ma_periods
+        
         # 创建必要的目录
         self.data_config.raw_dir.mkdir(parents=True, exist_ok=True)
         self.data_config.processed_dir.mkdir(parents=True, exist_ok=True)
@@ -153,7 +198,6 @@ class BaseConfig:
         
         # 从环境变量加载OpenAI配置
         if not self.openai:
-            import os
             from dotenv import load_dotenv
             load_dotenv()
             
@@ -169,19 +213,6 @@ class BaseConfig:
                     retry_count=int(os.getenv("OPENAI_RETRY_COUNT", "3")),
                     retry_delay=int(os.getenv("OPENAI_RETRY_DELAY", "5"))
                 )
-        
-        # 从环境变量加载处理配置
-        self.max_workers = int(os.getenv('MAX_WORKERS', str(self.max_workers)))
-        self.chunk_size = int(os.getenv('CHUNK_SIZE', str(self.chunk_size)))
-        self.batch_size = int(os.getenv('BATCH_SIZE', str(self.batch_size)))
-        
-        # 从环境变量加载分析配置
-        self.analysis = AnalysisConfig(
-            fundamental_enabled=os.getenv('ANALYSIS_FUNDAMENTAL_ENABLED', 'true').lower() == 'true',
-            technical_enabled=os.getenv('ANALYSIS_TECHNICAL_ENABLED', 'true').lower() == 'true',
-            news_enabled=os.getenv('ANALYSIS_NEWS_ENABLED', 'true').lower() == 'true',
-            news_lookback_days=int(os.getenv('ANALYSIS_NEWS_LOOKBACK_DAYS', '5'))
-        )
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -223,7 +254,20 @@ class BaseConfig:
                 "technical_indicators": self.analysis.technical_indicators,
                 "news_enabled": self.analysis.news_enabled,
                 "news_sources": self.analysis.news_sources,
-                "news_lookback_days": self.analysis.news_lookback_days
+                "news_lookback_days": self.analysis.news_lookback_days,
+                "technical_config": {
+                    "ma_periods": self.analysis.technical_config.ma_periods,
+                    "ema_periods": self.analysis.technical_config.ema_periods,
+                    "macd_fast": self.analysis.technical_config.macd_fast,
+                    "macd_slow": self.analysis.technical_config.macd_slow,
+                    "macd_signal": self.analysis.technical_config.macd_signal,
+                    "rsi_period": self.analysis.technical_config.rsi_period,
+                    "kdj_k": self.analysis.technical_config.kdj_k,
+                    "kdj_d": self.analysis.technical_config.kdj_d,
+                    "kdj_j": self.analysis.technical_config.kdj_j,
+                    "boll_period": self.analysis.technical_config.boll_period,
+                    "boll_std": self.analysis.technical_config.boll_std
+                }
             }
         }
         
